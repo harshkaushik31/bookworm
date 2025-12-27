@@ -18,7 +18,6 @@ export default function Home() {
     const [hasMore, setHasMore] = useState(true);
 
     const fetchBooks = async (pageNum = 1, refresh = false) => {
-
         if (!token) {
             setLoading(false);
             setRefreshing(false);
@@ -28,38 +27,40 @@ export default function Home() {
         try {
             if (refresh) {
                 setRefreshing(true);
+                setPage(1);
+                setHasMore(true);
+            } else if (pageNum === 1) {
+                setLoading(true);
             }
-            else if (pageNum === 1) setLoading(true)
 
-            const response = await fetch(`${API_URL}/api/books?page=${pageNum}&limit=5`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
+            const response = await fetch(
+                `${API_URL}/api/books?page=${pageNum}&limit=5`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
                 }
-            })
+            );
 
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || "Failed to fetch books");
 
-
-            const uniqueBooks =
+            setBooks((prev) =>
                 refresh || pageNum === 1
                     ? data.books
-                    : Array.from(new Set([...books, ...data.books].map((book) => book._id))).map((id) =>
-                        [...books, ...data.books].find((book) => book._id === id)
-                    );
+                    : [...prev, ...data.books]
+            );
 
-            setBooks(uniqueBooks);
             setHasMore(pageNum < data.totalPages);
-            setPage(pageNum + 1)
+            setPage(pageNum + 1);
         } catch (error) {
-            console.log("Error fetching books: ", error);
+            console.log("Error fetching books:", error);
         } finally {
-            if (refresh) {
-                setRefreshing(false);
-            }
-            else { setLoading(false); }
+            if (refresh) setRefreshing(false);
+            else setLoading(false);
         }
-    }
+    };
+
 
 
     useEffect(() => {
@@ -69,11 +70,12 @@ export default function Home() {
     }, [token]);
 
 
-    const handleLoadMore = async () => {
+    const handleLoadMore = () => {
         if (hasMore && !loading && !refreshing) {
-            await (fetchBooks(page + 1));
+            fetchBooks(page);
         }
-    }
+    };
+
 
     const renderItem = ({ item }) => (
         <View style={styles.bookCard}>
