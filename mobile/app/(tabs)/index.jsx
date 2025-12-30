@@ -1,5 +1,5 @@
 import { useAuthStore } from '@/store/authStore'
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, FlatList, ActivityIndicator, RefreshControl } from 'react-native'
 import styles from '@/assets/styles/home.styles';
 import { API_URL } from '@/constants/api';
@@ -14,23 +14,25 @@ export default function Home() {
     const [books, setBooks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
+    
+    // Prevent multiple simultaneous fetches
+    const isFetchingRef = useRef(false);
 
-    const fetchBooks = async (pageNum = 1, refresh = false) => {
-        if (!token) {
-            setLoading(false);
-            setRefreshing(false);
-            return;
-        }
+    const fetchBooks = useCallback(async (pageNum, refresh = false) => {
+        if (!token || isFetchingRef.current) return;
+        
+        isFetchingRef.current = true;
 
         try {
             if (refresh) {
                 setRefreshing(true);
-                setPage(1);
-                setHasMore(true);
             } else if (pageNum === 1) {
                 setLoading(true);
+            } else {
+                setLoadingMore(true);
             }
 
             const response = await fetch(
@@ -43,62 +45,87 @@ export default function Home() {
             );
 
             const data = await response.json();
-            if (!response.ok) throw new Error(data.message || "Failed to fetch books");
+            
+            if (!response.ok) {
+                throw new Error(data.message || "Failed to fetch books");
+            }
 
-            setBooks((prev) =>
-                refresh || pageNum === 1
-                    ? data.books
-                    : [...prev, ...data.books]
-            );
-
-            setHasMore(pageNum < data.totalPages);
-            setPage(pageNum + 1);
+            // Update books
+            if (refresh || pageNum === 1) {
+                setBooks(data.books);
+            } else {
+                setBooks(prev => [...prev, ...data.books]);
+            }
+            
+            // Update pagination state
+            setHasMore(data.books.length > 0 && pageNum < data.totalPages);
+            
+            // Only increment page if there's more data
+            if (pageNum < data.totalPages) {
+                setPage(pageNum + 1);
+            }
+            
         } catch (error) {
             console.log("Error fetching books:", error);
         } finally {
-            if (refresh) setRefreshing(false);
-            else setLoading(false);
+            isFetchingRef.current = false;
+            setLoading(false);
+            setRefreshing(false);
+            setLoadingMore(false);
         }
-    };
-
-
-
-    useEffect(() => {
-        if (!token) { setLoading(false); return; }
-
-        fetchBooks(1, true);
     }, [token]);
 
+    useEffect(() => {
+        if (!token) { 
+            setLoading(false); 
+            return; 
+        }
+        fetchBooks(1, true);
+    }, [token, fetchBooks]);
 
     const handleLoadMore = () => {
-        if (hasMore && !loading && !refreshing) {
+        if (hasMore && !loading && !refreshing && !loadingMore) {
             fetchBooks(page);
         }
     };
 
+    const handleRefresh = () => {
+        setPage(1);
+        setHasMore(true);
+        fetchBooks(1, true);
+    };
 
     const renderItem = ({ item }) => (
         <View style={styles.bookCard}>
             <View style={styles.bookHeader}>
                 <View style={styles.userInfo}>
-                    <Image source={{ uri: item.user.profileImage }} style={styles.avatar} contentFit='cover' />
+                    <Image 
+                        source={{ uri: item.user.profileImage }} 
+                        style={styles.avatar} 
+                        contentFit='cover' 
+                    />
                     <Text style={styles.username}>{item.user.username}</Text>
                 </View>
             </View>
-
             <View style={styles.bookImageContainer}>
-                <Image source={item.image} style={styles.bookImage} contentFit="cover" />
+                <Image 
+                    source={item.image} 
+                    style={styles.bookImage} 
+                    contentFit="cover" 
+                />
             </View>
-
             <View style={styles.bookDetails}>
                 <Text style={styles.bookTitle}>{item.title}</Text>
-                <View style={styles.ratingContainer}>{renderRatingStars(item.rating)}</View>
+                <View style={styles.ratingContainer}>
+                    {renderRatingStars(item.rating)}
+                </View>
                 <Text style={styles.caption}>{item.caption}</Text>
-                <Text style={styles.date}>Shared on {formatPublishDate(item.createdAt)}</Text>
+                <Text style={styles.date}>
+                    Shared on {formatPublishDate(item.createdAt)}
+                </Text>
             </View>
-
         </View>
-    )
+    );
 
     const renderRatingStars = (rating) => {
         const stars = [];
@@ -127,36 +154,46 @@ export default function Home() {
                 contentContainerStyle={styles.listContainer}
                 showsVerticalScrollIndicator={false}
                 onEndReached={handleLoadMore}
-                onEndReachedThreshold={0.1}
-
+                onEndReachedThreshold={0.5}
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
-                        onRefresh={async () => fetchBooks(1, true)}
+                        onRefresh={handleRefresh}
                         colors={[COLORS.primary]}
                         tintColor={COLORS.primary}
                     />
                 }
-
                 ListHeaderComponent={
                     <View style={styles.header}>
                         <Text style={styles.headerTitle}>BookWorm 📗</Text>
-                        <Text style={styles.headerSubtitle}>Discover great reads from the community ^_^</Text>
+                        <Text style={styles.headerSubtitle}>
+                            Discover great reads from the community ^_^
+                        </Text>
                     </View>
                 }
                 ListFooterComponent={
-                    hasMore && books.length > 0 ? (
-                        <ActivityIndicator style={styles.footerLoader} size="small" color={COLORS.primary} />
+                    loadingMore ? (
+                        <ActivityIndicator 
+                            style={styles.footerLoader} 
+                            size="small" 
+                            color={COLORS.primary} 
+                        />
                     ) : null
                 }
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
-                        <Ionicons name="book-outline" size={60} color={COLORS.textSecondary} />
+                        <Ionicons 
+                            name="book-outline" 
+                            size={60} 
+                            color={COLORS.textSecondary} 
+                        />
                         <Text style={styles.emptyText}>No recommendations yet</Text>
-                        <Text style={styles.emptySubtext}>Be the first to share a book!</Text>
+                        <Text style={styles.emptySubtext}>
+                            Be the first to share a book!
+                        </Text>
                     </View>
                 }
             />
         </View>
-    )
+    );
 }
