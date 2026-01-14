@@ -23,6 +23,8 @@ BookWorm is a full-stack mobile application that allows users to share, browse, 
 - Pagination-based feed for reviews
 - Secure backend APIs
 
+<video controls src="WhatsApp Video 2026-01-02 at 12.44.05 PM.mp4" title="Title"></video>
+
 ---
 
 ## 📖 What I Learned
